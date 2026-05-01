@@ -137,3 +137,39 @@ export const withdraw = async (req: AuthRequest, res: Response): Promise<void> =
     amount: conversion.amount,
   });
 };
+
+// Add balance to the currently logged-in user (useful for testing)
+export const addSelfBalance = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { amount } = req.body as { amount: number };
+   console.log("Reaching here")
+  if (!amount || amount <= 0 || !Number.isInteger(amount)) {
+    res.status(400).json({ error: 'amount must be a positive integer' });
+    return;
+  }
+
+  const user = await User.findByIdAndUpdate(
+    req.user.id,
+    { $inc: { tokenBalance: amount } },
+    { new: true }
+  );
+
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+
+  await TokenTransaction.create({
+    userId: user._id,
+    type: 'EARN',
+    source: 'MANUAL',
+    amount,
+    balanceAfter: user.tokenBalance,
+    referenceId: 'self-top-up',
+  });
+
+  res.json({
+    message: 'Balance added successfully',
+    amountAdded: amount,
+    newTokenBalance: user.tokenBalance,
+  });
+};

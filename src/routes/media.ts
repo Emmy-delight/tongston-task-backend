@@ -8,5 +8,6 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.post('/upload', auth as RequestHandler, upload.single('file'), ctrl.upload as unknown as RequestHandler);
 router.post('/:id/promote', auth as RequestHandler, ctrl.promote as unknown as RequestHandler);
+router.get('/', auth as RequestHandler,ctrl.getAll as unknown as RequestHandler);
 
 export default router;

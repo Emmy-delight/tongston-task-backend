@@ -1,20 +1,8 @@
 import { Response } from 'express';
-import { Types } from 'mongoose';
 import { AuthRequest } from '../types';
+import Media from '../models/Media';
 import * as cloudinaryService from '../services/cloudinaryService';
 import * as s3Service from '../services/s3Service';
-
-interface MediaRecord {
-  id: string;
-  url: string;
-  publicId: string;
-  storage: 'cloudinary' | 's3';
-  originalName: string;
-  uploadedAt: Date;
-}
-
-// In-memory store — replace with a Media mongoose model in production
-const mediaStore = new Map<string, MediaRecord>();
 
 export const upload = async (req: AuthRequest, res: Response): Promise<void> => {
   if (!req.file) {
@@ -23,24 +11,20 @@ export const upload = async (req: AuthRequest, res: Response): Promise<void> => 
   }
 
   const result = await cloudinaryService.uploadBuffer(req.file.buffer, req.file.originalname);
-  const id = new Types.ObjectId().toString();
 
-  const record: MediaRecord = {
-    id,
+  const media = await Media.create({
     url: result.secure_url,
     publicId: result.public_id,
     storage: 'cloudinary',
     originalName: req.file.originalname,
-    uploadedAt: new Date(),
-  };
+    uploadedBy: req.user.id,
+  });
 
-  mediaStore.set(id, record);
-  res.status(201).json(record);
+  res.status(201).json(media);
 };
 
 export const promote = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id } = req.params;
-  const media = mediaStore.get(id);
+  const media = await Media.findById(req.params.id);
 
   if (!media) {
     res.status(404).json({ error: 'Media not found' });
@@ -56,7 +40,26 @@ export const promote = async (req: AuthRequest, res: Response): Promise<void> =>
 
   media.url = s3Url;
   media.storage = 's3';
-  mediaStore.set(id, media);
+  await media.save();
 
   res.json({ message: 'Successfully promoted to S3', media });
+};
+
+export const getAll = async (req: AuthRequest, res: Response): Promise<void> => {
+  const media = await Media.find({ uploadedBy: req.user.id })
+    .sort({ uploadedAt: -1 })
+    .populate('uploadedBy', 'email');
+
+  res.json(media);
+};
+
+export const getOne = async (req: AuthRequest, res: Response): Promise<void> => {
+  const media = await Media.findById(req.params.id).populate('uploadedBy', 'email');
+
+  if (!media) {
+    res.status(404).json({ error: 'Media not found' });
+    return;
+  }
+
+  res.json(media);
 };

@@ -1,3 +1,14 @@
+import OpenAI from 'openai';
+
+const client = new OpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: 'https://openrouter.ai/api/v1',
+  defaultHeaders: {
+    'HTTP-Referer': process.env.APP_URL ?? 'http://localhost:5000',
+    'X-Title': 'T-World Module Service',
+  },
+});
+
 interface SummarizeOptions {
   tone: string;
   length: string;
@@ -9,51 +20,58 @@ const WORD_COUNTS: Record<string, number> = {
   long: 100,
 };
 
-// Mock AI — swap body for real OpenAI call if key is available
 export const summarize = async (text: string, options: SummarizeOptions): Promise<string> => {
   const { tone, length } = options;
-
-  // Simulate network latency
-  const delay = 300 + Math.random() * 500;
-  await new Promise<void>((resolve) => setTimeout(resolve, delay));
-
-  // Simulate 5% timeout rate — realistic for assessment
-  if (Math.random() < 0.05) {
-    throw new Error('TIMEOUT');
-  }
-
   const wordCount = WORD_COUNTS[length] ?? 30;
-  const snippet = text.split(' ').slice(0, wordCount).join(' ');
 
-  return `[${tone.toUpperCase()} SUMMARY]: ${snippet}...`;
-};
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000); // 10s hard timeout
 
-/*
-  ── Real OpenAI version ──────────────────────────────────────────────────────
-  Uncomment and install: npm i openai
-
-  import OpenAI from 'openai';
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-  export const summarize = async (text: string, options: SummarizeOptions): Promise<string> => {
-    const { tone, length } = options;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
-    try {
-      const response = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
+  try {
+    const response = await client.chat.completions.create(
+      {
+        model: "baidu/qianfan-ocr-fast:free", // free tier model on OpenRouter
         messages: [
-          { role: 'system', content: `Summarize in a ${tone} tone. Keep it ${length}.` },
-          { role: 'user', content: text },
+          {
+            role: 'system',
+            content: [
+              `You are a summarization assistant.`,
+              `Summarize the user's text in a ${tone} tone.`,
+              `Return only the summary text — no preamble, no labels, no quotes.`,
+            ].join(' '),
+          },
+          {
+            role: 'user',
+            content: text,
+          },
         ],
-      }, { signal: controller.signal });
-      return response.choices[0].message.content ?? '';
-    } catch (err: unknown) {
-      if ((err as Error).name === 'AbortError') throw new Error('TIMEOUT');
-      throw err;
-    } finally {
-      clearTimeout(timeout);
+        max_tokens: 200,
+        temperature: 0.5,
+      },
+      { signal: controller.signal }
+    );
+
+    const output = response.choices[0]?.message?.content?.trim();
+
+    if (!output) {
+      throw new Error('Empty response from AI provider');
     }
-  };
-  ─────────────────────────────────────────────────────────────────────────────
-*/
+
+    return output;
+  } catch (err: unknown) {
+    const error = err as Error;
+
+    if (error.name === 'AbortError' || error.message?.includes('abort')) {
+      throw new Error('TIMEOUT');
+    }
+
+    // OpenRouter rate limit or model error — surface clearly
+    if (error.message?.includes('429')) {
+      throw new Error('RATE_LIMITED');
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+};

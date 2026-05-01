@@ -1,6 +1,7 @@
 import { Schema, model, Document, Types } from 'mongoose';
 import { TokenType, TokenSource } from '../types';
 
+
 export interface ITokenTransaction extends Document {
   userId: Types.ObjectId;
   type: TokenType;
@@ -22,12 +23,12 @@ const TokenTransactionSchema = new Schema<ITokenTransaction>({
 });
 
 // Immutable — no updates allowed
-TokenTransactionSchema.pre('save', function (next : any) {
-  if (!this.isNew) {
-    next(new Error('Token transactions are immutable'));
-  } else {
-    next();
-  }
-});
+// TokenTransactionSchema.pre('save', function (next: any) {
+//   if (!this.isNew) {
+//     next(new Error('Token transactions are immutable'));
+//   } else {
+//     next();
+//   }
+// });
 
 export default model<ITokenTransaction>('TokenTransaction', TokenTransactionSchema);
